@@ -24,6 +24,10 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      
     env:
       registry: us-west1-docker.pkg.dev
       image: geocoder-${{ matrix.arch }}
