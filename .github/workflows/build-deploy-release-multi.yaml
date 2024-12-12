@@ -17,7 +17,7 @@ jobs:
           - ubuntu-latest
           - ubuntu-22-arm64-4-16
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22-amd64-4-16
             arch: amd64
           - os: ubuntu-22-arm64-4-16
             arch: arm64
@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
-      
+
     env:
       registry: us-west1-docker.pkg.dev
       image: geocoder-${{ matrix.arch }}
@@ -46,6 +46,17 @@ jobs:
         run: |
           versioned="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:${GITHUB_REF##*/}"
           echo "versioned=${versioned}" >> $GITHUB_ENV
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
