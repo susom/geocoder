@@ -1,0 +1,92 @@
+#
+# Builds tests amd64 and arm64 images (separately, to reduce image size)
+#
+name: build-deploy-release-multi
+on:
+  push:
+  release:
+    types: [published]
+
+jobs:
+  build:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: 
+          - ubuntu-latest
+          - ubuntu-22-arm64-4-16
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-22-arm64-4-16
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      registry: us-west1-docker.pkg.dev
+      image: geocoder-${{ matrix.arch }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: create latest tag variable
+        run: |
+          container="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:latest"
+          echo "container=${container}" >> $GITHUB_ENV
+
+      - name: create release tag variable
+        if: github.event_name == 'release'
+        run: |
+          versioned="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:${GITHUB_REF##*/}"
+          echo "versioned=${versioned}" >> $GITHUB_ENV
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.IDENTITY_PROVIDER }}
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          version: '>= 363.0.0'
+
+      - name: Configure docker for Google artifact registry
+        id: docker
+        run: gcloud auth configure-docker ${{ env.registry }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+          tags: ${{ env.container }}
+
+      - name: Test image
+        id: test
+        run: |
+          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv
+          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv 0.6
+          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv all
+
+      - name: Push image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: true
+          tags: |
+            ${{ env.container }}
+            ${{ env.versioned }}
+
