@@ -1,5 +1,5 @@
 # The database is huge, let's share it between the architectures to reduce image size
-FROM scratch --platform=$BUILDPLATFORM AS db
+FROM --platform=$BUILDPLATFORM scratch AS db
 ADD https://geomarker.s3.amazonaws.com/geocoder_2021.db /opt/geocoder.db
 
 FROM rocker/r-ver:4.4.1
