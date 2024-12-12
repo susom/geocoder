@@ -1,7 +1,3 @@
-# The database is huge, let's share it between the architectures to reduce image size
-FROM --platform=$BUILDPLATFORM scratch AS db
-ADD https://geomarker.s3.amazonaws.com/geocoder_2021.db /opt/geocoder.db
-
 FROM rocker/r-ver:4.4.1
 
 # DeGAUSS container metadata
@@ -16,7 +12,8 @@ LABEL "org.degauss.version"="${degauss_version}"
 LABEL "org.degauss.description"="${degauss_description}"
 LABEL "org.degauss.argument"="${degauss_argument}"
 
-COPY --from=db /opt/geocoder.db /opt/geocoder.db
+ADD https://geomarker.s3.amazonaws.com/geocoder_2021.db /opt/geocoder.db
+# COPY geocoder.db /opt/geocoder.db
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
