@@ -47,17 +47,6 @@ jobs:
           versioned="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:${GITHUB_REF##*/}"
           echo "versioned=${versioned}" >> $GITHUB_ENV
 
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
         with:
