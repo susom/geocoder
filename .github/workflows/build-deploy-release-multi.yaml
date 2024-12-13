@@ -62,18 +62,16 @@ jobs:
         id: docker
         run: gcloud auth configure-docker ${{ env.registry }}
 
-      - name: Build and push by digest
+      - name: Build docker image
         id: build
         uses: docker/build-push-action@v5
         with:
           provenance: false
           context: .
+          load: true
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          outputs: |
-            type=image,name=${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }},push-by-digest=true,name-canonical=true,push=true
-            type=docker
           cache-from: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
           cache-to: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
       
@@ -84,10 +82,24 @@ jobs:
           docker run --rm -v "${PWD}/test":/tmp ${{ steps.build.outputs.imageid }} my_address_file.csv 0.6
           docker run --rm -v "${PWD}/test":/tmp ${{ steps.build.outputs.imageid }} my_address_file.csv all
 
+      - name: Build and push by digest
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          provenance: false
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: |
+            type=image,name=${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+      
       - name: Export digest
         run: |
           mkdir -p /tmp/digests/${{ env.image }}
-          digest="${{ steps.build.outputs.digest }}"
+          digest="${{ steps.push.outputs.digest }}"
           touch "/tmp/digests/${{ env.image }}/${digest#sha256:}"
 
       - name: Upload digest
