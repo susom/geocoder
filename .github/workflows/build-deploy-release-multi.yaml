@@ -3,6 +3,7 @@
 #
 name: build-deploy-release-multi
 on:
+  push:
   release:
     types: [published]
 
