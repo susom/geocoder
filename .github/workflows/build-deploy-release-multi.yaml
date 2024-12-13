@@ -3,6 +3,7 @@
 #
 name: build-deploy-release-multi
 on:
+  push:
   release:
     types: [published]
 
@@ -17,34 +18,35 @@ jobs:
           - ubuntu-22-arm64-4-16
         include:
           - os: ubuntu-22-amd64-4-16
-            arch: amd64
+            platform: linux/amd64
           - os: ubuntu-22-arm64-4-16
-            arch: arm64
+            platform: linux/arm64
 
     runs-on: ${{ matrix.os }}
 
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: read
+      id-token: write
 
     env:
       registry: us-west1-docker.pkg.dev
-      image: geocoder-${{ matrix.arch }}
+      image: geocoder
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: create latest tag variable
-        run: |
-          container="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:latest"
-          echo "container=${container}" >> $GITHUB_ENV
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with: 
+          images: ${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}
 
-      - name: create release tag variable
-        if: github.event_name == 'release'
-        run: |
-          versioned="${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:${GITHUB_REF##*/}"
-          echo "versioned=${versioned}" >> $GITHUB_ENV
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          endpoint: builders
+          platforms: ${{ matrix.platform }}
 
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
@@ -61,35 +63,97 @@ jobs:
         id: docker
         run: gcloud auth configure-docker ${{ env.registry }}
 
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          provenance: false
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: |
+            type=image,name=${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+      
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests/${{ env.image }}
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${{ env.image }}/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.image }}-digests
+          path: /tmp/digests/${{ env.image }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Clear digest
+        run: |
+          rm -rf /tmp/digests/${{ env.image }}
+
+  merge:
+
+    env:
+      registry: us-west1-docker.pkg.dev
+      image: geocoder
+
+    strategy:
+      fail-fast: false
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    needs:
+      - build
+
+    name: Merge Docker manifests
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.image }}-digests
+          path: /tmp/digests/${{ env.image }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with: 
+          images: ${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Build image
-        id: build
-        uses: docker/build-push-action@v6
         with:
-          context: .
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          load: true
-          tags: ${{ env.container }}
+          version: v0.12.0
 
-      - name: Test image
-        id: test
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.IDENTITY_PROVIDER }}
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          version: '>= 363.0.0'
+
+      - name: Configure docker for Google artifact registry
+        id: docker
+        run: gcloud auth configure-docker ${{ env.registry }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests/${{ env.image }}
         run: |
-          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv
-          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv 0.6
-          docker run --rm -v "${PWD}/test":/tmp ${{ env.container }} my_address_file.csv all
-
-      - name: Push image
-        id: push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          push: true
-          tags: |
-            ${{ env.container }}
-            ${{ env.versioned }}
-
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< '${{ steps.meta.outputs.json }}') \
+            $(printf '${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}@sha256:%s ' *)
+      
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect '${{ env.registry }}/${{ secrets.PROJECT_ID }}/${{ secrets.REPOSITORY }}/${{ env.image }}:${{ steps.meta.outputs.version }}'
