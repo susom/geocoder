@@ -82,9 +82,9 @@ jobs:
           touch "/tmp/digests/${{ env.image }}/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.image }}-digests
+          name: ${{ env.image }}-digests-${{ matrix.os }}
           path: /tmp/digests/${{ env.image }}/*
           if-no-files-found: error
           retention-days: 1
@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22-amd64-4-16
 
     permissions:
       contents: read
@@ -115,9 +115,10 @@ jobs:
 
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ env.image }}-digests
+          pattern: ${{ env.image }}-digests-*
+          merge-multiple: true
           path: /tmp/digests/${{ env.image }}
 
       - name: Docker meta
