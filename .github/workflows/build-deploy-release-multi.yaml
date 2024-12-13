@@ -1,5 +1,5 @@
 #
-# Builds tests amd64 and arm64 images (separately, to reduce image size)
+# Builds amd64 and arm64 architectures
 #
 name: build-deploy-release-multi
 on:
