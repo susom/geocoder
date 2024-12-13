@@ -45,7 +45,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          endpoint: builders
           platforms: ${{ matrix.platform }}
 
       - name: Authenticate with Google Cloud
@@ -130,8 +129,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          version: v0.12.0
 
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
